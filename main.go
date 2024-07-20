@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/DusanKasan/parsemail"
 	"os"
 	"path/filepath"
 )
@@ -14,6 +15,15 @@ func main() {
 		fmt.Println("To", meta.To)
 		fmt.Println("Subject", meta.Subject)
 		fmt.Println("Date", TimeStr(meta.Date))
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "view" {
+		e, err := parsemail.Parse(os.Stdin)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(e.HTMLBody, e.TextBody)
 		return
 	}
 
