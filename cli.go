@@ -2,14 +2,18 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
+	"github.com/DusanKasan/parsemail"
 	"github.com/andybalholm/brotli"
+	"golang.org/x/net/html"
+	"io"
 	"strings"
 	"time"
 )
 
-func TimeStr(s int64) string {
-	t := time.Unix(s, 0).Local()
+func TimeStr(t time.Time) string {
+	t = t.Local()
 	n := time.Now().Local()
 	return strings.ReplaceAll(func() string {
 		if t.Year() != n.Year() {
@@ -40,4 +44,73 @@ func UnBr(buf *bytes.Buffer) error {
 	reader := brotli.NewReader(bytes.NewReader(data))
 	_, err := buf.ReadFrom(reader)
 	return err
+}
+
+func Show(b []byte) {
+	e, err := parsemail.Parse(bytes.NewReader(b))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	if e.HTMLBody != "" {
+		var b []byte
+		if b, err = base64.StdEncoding.DecodeString(e.HTMLBody); err == nil {
+			fmt.Println(RenderHTML(string(b)))
+		} else {
+			fmt.Println(RenderHTML(e.HTMLBody))
+		}
+	}
+	for _, a := range e.Attachments {
+		fmt.Println(a.Filename)
+		fmt.Println(a.ContentType)
+	}
+	for _, h := range e.EmbeddedFiles {
+		fmt.Println(h.ContentType)
+		fmt.Println(h.CID)
+	}
+}
+
+func node(w io.Writer, n *html.Node) {
+	switch n.Type {
+	case html.ElementNode:
+		switch n.Data {
+		case "script", "style", "head", "img":
+			return
+		case "b", "strong":
+			fmt.Fprint(w, "\033[1m") // Bold
+		case "i":
+			fmt.Fprint(w, "\033[2m") // Italic
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			node(w, c)
+		}
+
+		// Reset styles after the element
+		switch n.Data {
+		case "h1", "h2", "p", "br":
+			fmt.Fprint(w, "\033[0m\n")
+		case "b", "strong", "i", "em":
+			fmt.Fprint(w, "\033[0m")
+		}
+
+	case html.TextNode:
+		fmt.Fprint(w, n.Data, " ")
+
+	default:
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			node(w, c)
+		}
+	}
+
+}
+
+func RenderHTML(htmlContent string) string {
+	doc, err := html.Parse(bytes.NewBufferString(htmlContent))
+	if err != nil {
+		panic(err)
+	}
+
+	var buff bytes.Buffer
+	node(&buff, doc)
+	return buff.String()
 }

@@ -2,10 +2,31 @@ package main
 
 import (
 	"fmt"
-	"github.com/DusanKasan/parsemail"
 	"os"
 	"path/filepath"
 )
+
+var DBPATH, SOCK, LOG string
+
+func init() {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		os.Exit(1)
+	}
+	DBPATH = filepath.Join(home, ".mailbox", "mail.storm")
+	SOCK = filepath.Join(home, ".mailbox", "mail.sock")
+	LOG = filepath.Join(home, ".mailbox", "box.log")
+}
+
+func FtlLog(e error) {
+	if e == nil {
+		return
+	}
+	log, _ := os.OpenFile(LOG, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0664)
+	fmt.Fprintln(log, "Fatal: ", e.Error())
+	log.Close()
+	os.Exit(1)
+}
 
 func main() {
 	if (len(os.Args) > 0 && filepath.Base(os.Args[0]) == "mailbox-parser") || (len(os.Args) > 1 && os.Args[1] == "parse") {
@@ -17,30 +38,9 @@ func main() {
 		fmt.Println("Date", TimeStr(meta.Date))
 		return
 	}
-	if len(os.Args) > 1 && os.Args[1] == "view" {
-		e, err := parsemail.Parse(os.Stdin)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Println(e.HTMLBody, e.TextBody)
+	if (len(os.Args) > 0 && filepath.Base(os.Args[0]) == "mailbox-db") || (len(os.Args) > 1 && os.Args[1] == "db") {
+
 		return
 	}
 
-	// Print email details
-
 }
-
-/*#
-CREATE TABLE `info` (
-    `id` TEXT PRIMARY KEY,
-    `from` TEXT,
-    `to` TEXT,
-    `subject` TEXT,
-    `date` TEXT
-);
-CREATE TABLE `file` (
-    `id` TEXT PRIMARY KEY,
-    `data` TEXT
-);
-*/

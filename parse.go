@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
-	"encoding/base32"
 	"fmt"
 	"github.com/andybalholm/brotli"
 	"mime"
@@ -25,35 +24,27 @@ func Brotli(buf *bytes.Buffer) error {
 
 func Parse() (EmailMeta, bytes.Buffer) {
 	var email bytes.Buffer
-	if _, err := email.ReadFrom(os.Stdin); err != nil {
-		os.Exit(1)
-	}
-
+	_, err := email.ReadFrom(os.Stdin)
+	FtlLog(err)
 	meta, err := GenerateMeta(email)
-	if err != nil {
-		os.Exit(1)
-	}
-	_ = meta
-	err = Brotli(&email)
-	if err != nil {
-		os.Exit(1)
-	}
+	FtlLog(err)
+	FtlLog(Brotli(&email))
 	return meta, email
 }
 
-func dateHeader(e *mail.Header) int64 {
+func dateHeader(e *mail.Header) time.Time {
 	var d time.Time
 	var err error
 	d, err = e.Date()
 	if err != nil {
 		d = time.Now().Local()
 	}
-	return d.UTC().Unix()
+	return d
 }
-func ShaHash(b []byte) string {
+func ShaHash(b []byte) []byte {
 	h := sha1.New()
 	h.Write(b)
-	return base32.StdEncoding.EncodeToString(h.Sum(nil))
+	return h.Sum(nil)
 }
 
 // GenerateMeta generates the EmailMeta for the EmailData
@@ -113,9 +104,9 @@ func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
 
 // EmailMeta contains the fields that will be searchable in the database
 type EmailMeta struct {
-	From    string
-	To      string
-	Subject string
-	Date    int64
-	Id      string
+	From    string    `storm:"index"`
+	To      string    `storm:"index"`
+	Subject string    `storm:"index"`
+	Date    time.Time `storm:"index"`
+	Id      []byte    `storm:"id,unique,hash"`
 }
