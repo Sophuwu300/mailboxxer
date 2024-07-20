@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"fmt"
-	"github.com/DusanKasan/parsemail"
 	"github.com/andybalholm/brotli"
 	"mime"
 	"net/mail"
@@ -29,6 +28,7 @@ func Parse() (EmailMeta, bytes.Buffer) {
 	if _, err := email.ReadFrom(os.Stdin); err != nil {
 		os.Exit(1)
 	}
+
 	meta, err := GenerateMeta(email)
 	if err != nil {
 		os.Exit(1)
@@ -50,7 +50,6 @@ func dateHeader(e *mail.Header) int64 {
 	}
 	return d.UTC().Unix()
 }
-
 func ShaHash(b []byte) string {
 	h := sha1.New()
 	h.Write(b)
@@ -72,18 +71,16 @@ func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
 		}
 	}(mime.WordDecoder{})
 
-	// e, err := mail.ReadMessage(&email)
-	e, err := parsemail.Parse(&email)
+	e, err := mail.ReadMessage(bytes.NewReader(email.Bytes()))
 	if err != nil {
-		fmt.Println("Error parsing email: ", err)
 		return em, err
 	}
 
 	em.To = func() string {
-		if len(e.To) > 0 {
-			return e.To[0].String()
+		if len(e.Header.Get("To")) > 0 {
+			return e.Header.Get("To")
 		}
-		if e.Header.Get("X-Original-To") != "" {
+		if len(e.Header.Get("X-Original-To")) > 2 {
 			return e.Header.Get("X-Original-To")
 		}
 		if e.Header.Get("Delivered-To") != "" {
@@ -93,8 +90,8 @@ func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
 	}()
 	decode(&em.To)
 	em.From = func() string {
-		if len(e.From) > 0 {
-			return e.From[0].String()
+		if len(e.Header.Get("From")) > 0 {
+			return e.Header.Get("From")
 		}
 		if len(e.Header.Get("Return-Path")) > 2 {
 			return e.Header.Get("Return-Path")
