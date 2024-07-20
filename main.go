@@ -12,6 +12,8 @@ func main() {
 		fmt.Println("Email ID: ", meta.Id, filebr.Len())
 		fmt.Println("From ", meta.From)
 		fmt.Println("To", meta.To)
+		fmt.Println("Subject", meta.Subject)
+		fmt.Println("Date", TimeStr(meta.Date))
 		return
 	}
 
