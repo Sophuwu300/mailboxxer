@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
+	_ "encoding/json"
 	"fmt"
 	"github.com/andybalholm/brotli"
+	_ "github.com/asdine/storm"
 	"mime"
 	"net/mail"
 	"os"
@@ -104,9 +106,9 @@ func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
 
 // EmailMeta contains the fields that will be searchable in the database
 type EmailMeta struct {
-	From    string    `storm:"index"`
-	To      string    `storm:"index"`
-	Subject string    `storm:"index"`
-	Date    time.Time `storm:"index"`
-	Id      []byte    `storm:"id,unique,hash"`
+	From    string    `json:"From" storm:"index"`
+	To      string    `json:"To" storm:"index"`
+	Subject string    `json:"Subject" storm:"index"`
+	Date    time.Time `json:"Date" storm:"index"`
+	Id      []byte    `json:"Id" storm:"unique,id"`
 }
