@@ -41,6 +41,21 @@ func init() {
 	}
 }
 
+func ReadRows(rows *sql.Rows) ([]EmailMeta, error) {
+	var metas []EmailMeta
+	var meta EmailMeta
+	var err error
+	defer rows.Close()
+	for rows.Next() {
+		err = rows.Scan(&meta.Id, &meta.Subject, &meta.To, &meta.From, &meta.Date)
+		if err != nil {
+			return metas, err
+		}
+		metas = append(metas, meta)
+	}
+	return metas, nil
+}
+
 func main() {
 	db, err := sql.Open("sqlite", DBPATH)
 	if err != nil {
@@ -56,9 +71,9 @@ func main() {
 		db.Exec("COMMIT")
 		db.Close()
 	}()
-	var newEmails []EmailMeta
-	err = ScanDir(&newEmails)
-	for _, em := range newEmails {
+	var metas []EmailMeta
+	err = ScanDir(&metas)
+	for _, em := range metas {
 		_, err = db.Exec("INSERT INTO emails (id, subject, toaddr, fromaddr, date) VALUES (?, ?, ?, ?, ?)", em.Id, em.Subject, em.To, em.From, em.Date)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -69,5 +84,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
-
+	rows, err := db.Query("SELECT * FROM emails ORDER BY date DESC")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	metas, err = ReadRows(rows)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	CLI(&metas)
 }

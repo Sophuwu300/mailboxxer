@@ -40,6 +40,10 @@ func NewEntry(f os.DirEntry) (EmailMeta, error) {
 	if err != nil {
 		return meta, err
 	}
+	if meta.Date == "" {
+		s, _ := f.Info()
+		meta.Date = s.ModTime().Format(TimeFormat)
+	}
 	err = SaveEmail(meta, email)
 	if err != nil {
 		return meta, err
@@ -85,7 +89,7 @@ func dateHeader(e *mail.Header) string {
 	var err error
 	d, err = e.Date()
 	if err != nil {
-		d = time.Now().Local()
+		return ""
 	}
 	return d.Format(TimeFormat)
 }
