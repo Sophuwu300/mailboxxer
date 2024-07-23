@@ -1,63 +1,73 @@
 package main
 
 import (
-	"encoding/json"
+	"database/sql"
 	"fmt"
+	_ "github.com/glebarez/go-sqlite"
 	"os"
 	"path/filepath"
 )
 
-var DBPATH, SOCK, LOG string
+var DBPATH, INBOX, SAVEPATH string
 
-func init() {
+func getHomeBox() string {
 	home, err := os.UserHomeDir()
-	FtlLog(err)
-	if home == "" {
+	if err != nil || home == "" {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".mailbox")); os.IsNotExist(err) {
-		os.Mkdir(filepath.Join(home, ".mailbox"), 0755)
-	}
-	DBPATH = filepath.Join(home, ".mailbox", "mail.storm")
-	SOCK = filepath.Join(home, ".mailbox", "mail.sock")
-	LOG = filepath.Join(home, ".mailbox", "box.log")
+	return filepath.Join(home, ".mailbox")
 }
 
-func FtlLog(e error) {
-	if e == nil {
-		return
+func init() {
+	var mailbox string
+	if len(os.Args) > 2 && os.Args[1] == "-m" {
+		mailbox = os.Args[2]
+	} else {
+		mailbox = getHomeBox()
 	}
-	log, _ := os.OpenFile(LOG, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0664)
-	fmt.Fprintln(log, "Fatal: ", e)
-	log.Close()
-	os.Exit(1)
+	var err error
+	if _, err = os.Stat(mailbox); os.IsNotExist(err) {
+		os.MkdirAll(mailbox, 0700)
+	}
+	DBPATH = filepath.Join(mailbox, "mailbox.sqlite")
+	INBOX = filepath.Join(mailbox, "inbox", "new")
+	if _, err = os.Stat(INBOX); os.IsNotExist(err) {
+		os.MkdirAll(INBOX, 0700)
+	}
+	SAVEPATH = filepath.Join(mailbox, "saved")
+	if _, err = os.Stat(SAVEPATH); os.IsNotExist(err) {
+		os.MkdirAll(SAVEPATH, 0700)
+	}
 }
 
 func main() {
-	if (len(os.Args) > 0 && os.Args[0] == "mailbox-parser") || (len(os.Args) > 1 && os.Args[1] == "parse") {
-		meta, filebr := Parse()
-		var put PUT
-		put.M = meta
-		put.D = filebr.Bytes()
-		b, err := json.Marshal(put)
-		FtlLog(err)
-		var r Req
-		r.CMD = "PUT"
-		r.Data = b
-		FtlLog(err)
-		b = sendToSock(r)
-		fmt.Println(string(b))
-	}
-	if (len(os.Args) > 0 && os.Args[0] == "mailbox-db") || (len(os.Args) > 1 && os.Args[1] == "db") {
-		Listen()
+	db, err := sql.Open("sqlite", DBPATH)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return
-	} else if len(os.Args) > 1 && os.Args[1] == "search" {
-		var r Req
-		r.CMD = "SEARCH"
-		b, _ := json.Marshal(os.Args[2])
-		r.Data = b
-		fmt.Println(string(sendToSock(r)))
-
+	}
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS emails (id TEXT PRIMARY KEY, subject TEXT, toaddr TEXT, fromaddr TEXT, date TEXT)")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	defer func() {
+		db.Exec("COMMIT")
+		db.Close()
+	}()
+	var newEmails []EmailMeta
+	err = ScanDir(&newEmails)
+	for _, em := range newEmails {
+		_, err = db.Exec("INSERT INTO emails (id, subject, toaddr, fromaddr, date) VALUES (?, ?, ?, ?, ?)", em.Id, em.Subject, em.To, em.From, em.Date)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
 	}
 
 }

@@ -6,12 +6,14 @@ import (
 	_ "encoding/json"
 	"fmt"
 	"github.com/andybalholm/brotli"
-	_ "github.com/asdine/storm"
 	"mime"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"time"
 )
+
+const TimeFormat = "2006-01-02 15:04:05 -0700"
 
 func Brotli(buf *bytes.Buffer) error {
 	data := buf.Bytes()
@@ -24,29 +26,73 @@ func Brotli(buf *bytes.Buffer) error {
 	return writer.Close()
 }
 
-func Parse() (EmailMeta, bytes.Buffer) {
-	var email bytes.Buffer
-	_, err := email.ReadFrom(os.Stdin)
-	FtlLog(err)
-	meta, err := GenerateMeta(email)
-	FtlLog(err)
-	FtlLog(Brotli(&email))
-	return meta, email
+func SaveEmail(em EmailMeta, email bytes.Buffer) error {
+	path := filepath.Join(SAVEPATH, em.Id+".br")
+	err := os.WriteFile(path, email.Bytes(), 0600)
+	return err
 }
 
-func dateHeader(e *mail.Header) time.Time {
+func NewEntry(f os.DirEntry) (EmailMeta, error) {
+	if !f.Type().IsRegular() {
+		return EmailMeta{}, fmt.Errorf("unsupported file type in directory")
+	}
+	meta, email, err := Parse(filepath.Join(INBOX, f.Name()))
+	if err != nil {
+		return meta, err
+	}
+	err = SaveEmail(meta, email)
+	if err != nil {
+		return meta, err
+	}
+	err = os.Remove(filepath.Join(INBOX, f.Name()))
+	return meta, err
+}
+
+func ScanDir(newEmails *[]EmailMeta) error {
+	dir, err := os.ReadDir(INBOX)
+	if err != nil {
+		return err
+	}
+	var meta EmailMeta
+	for _, f := range dir {
+		meta, err = NewEntry(f)
+		if err != nil {
+			return err
+		}
+		*newEmails = append(*newEmails, meta)
+	}
+	return nil
+}
+
+func Parse(path string) (EmailMeta, bytes.Buffer, error) {
+	var email bytes.Buffer
+	var meta EmailMeta
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return meta, email, err
+	}
+	email.Write(b)
+	meta, err = GenerateMeta(email)
+	if err != nil {
+		return meta, email, err
+	}
+	err = Brotli(&email)
+	return meta, email, err
+}
+
+func dateHeader(e *mail.Header) string {
 	var d time.Time
 	var err error
 	d, err = e.Date()
 	if err != nil {
 		d = time.Now().Local()
 	}
-	return d
+	return d.Format(TimeFormat)
 }
-func ShaHash(b []byte) []byte {
+func ShaHash(b []byte) string {
 	h := sha1.New()
 	h.Write(b)
-	return h.Sum(nil)
+	return fmt.Sprintf("%X", h.Sum(nil))
 }
 
 // GenerateMeta generates the EmailMeta for the EmailData
@@ -106,9 +152,9 @@ func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
 
 // EmailMeta contains the fields that will be searchable in the database
 type EmailMeta struct {
-	From    string    `json:"From" storm:"index"`
-	To      string    `json:"To" storm:"index"`
-	Subject string    `json:"Subject" storm:"index"`
-	Date    time.Time `json:"Date" storm:"index"`
-	Id      []byte    `json:"Id" storm:"unique,id"`
+	From    string `json:"From"`
+	To      string `json:"To"`
+	Subject string `json:"Subject"`
+	Date    string `json:"Date"`
+	Id      string `json:"Id" `
 }
