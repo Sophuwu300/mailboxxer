@@ -179,3 +179,25 @@ type EmailMeta struct {
 	Date    string `json:"Date"`
 	Id      string `json:"Id" `
 }
+
+func stdin() {
+	var err error
+	var b bytes.Buffer
+	b.ReadFrom(os.Stdin)
+	fl, e := GetFiles(&b)
+	if e != nil {
+		fmt.Fprintln(os.Stderr, e)
+		return
+	}
+	path := filepath.Dir(DBPATH)
+	path = filepath.Join(path, "stdin")
+	_ = os.MkdirAll(path, 0700)
+	for name, data := range fl {
+		err = os.WriteFile(filepath.Join(path, name), data, 0600)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return
+		}
+	}
+	os.Exit(0)
+}

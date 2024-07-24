@@ -39,7 +39,7 @@ func TimeStr(s string) string {
 			return t.Format("Jan 02th")
 		}
 		if d.Hours() > 24 {
-			return t.Format("Monday 15:04")
+			return t.Format("Mon 15:04")
 		}
 		if d.Hours() > 1 {
 			return fmt.Sprintf("%d h ago", int(d.Hours()))
