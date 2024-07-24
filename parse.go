@@ -110,20 +110,26 @@ func ShaHash(b []byte) string {
 	return fmt.Sprintf("%X", h.Sum(nil))
 }
 
+func decodeR(s string) string {
+	dec := new(mime.WordDecoder)
+	decoded, _ := dec.DecodeHeader(s)
+	return decoded
+}
+
+var decode = func(d mime.WordDecoder) func(s *string) {
+	return func(s *string) {
+		if ss, ers := d.DecodeHeader(fmt.Sprintf(*s)); ers == nil {
+			*s = ss
+		}
+	}
+}(mime.WordDecoder{})
+
 // GenerateMeta generates the EmailMeta for the EmailData
 // This is used to index the email in the database
 func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
 	var em EmailMeta
 	em.Id = ShaHash(email.Bytes())
 	em.Subject = "No Subject"
-
-	decode := func(d mime.WordDecoder) func(s *string) {
-		return func(s *string) {
-			if ss, ers := d.DecodeHeader(fmt.Sprintf(*s)); ers == nil {
-				*s = ss
-			}
-		}
-	}(mime.WordDecoder{})
 
 	e, err := mail.ReadMessage(bytes.NewReader(email.Bytes()))
 	if err != nil {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	_ "github.com/glebarez/go-sqlite"
@@ -97,6 +98,26 @@ func main() {
 	for _, v := range os.Args[1:] {
 		if v == "--cli" {
 			CLI(&metas)
+			return
+		}
+		if v == "--" {
+			var b bytes.Buffer
+			b.ReadFrom(os.Stdin)
+			fl, e := GetFiles(&b)
+			if e != nil {
+				fmt.Fprintln(os.Stderr, e)
+				return
+			}
+			path := filepath.Dir(DBPATH)
+			path = filepath.Join(path, "stdin")
+			_ = os.MkdirAll(path, 0700)
+			for name, data := range fl {
+				err = os.WriteFile(filepath.Join(path, name), data, 0600)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return
+				}
+			}
 			return
 		}
 	}

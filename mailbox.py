@@ -16,7 +16,8 @@ def openeml(file):
 def showparts(eml):
     for part in eml.walk():
         if part.get_payload(decode=True) is not None:
-            print(part.get_content_type(), part.get_content_disposition(), part.get_filename(), len(part.get_payload(decode=True)))
+            #print(part.get_payload(decode=True).decode('utf-8', errors='ignore'))
+            print(part.get_content_type())
 
 
 for file in sys.argv[1:]:
