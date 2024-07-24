@@ -1,6 +1,7 @@
 #!/bin/python3.11
 
 import email
+import sys
 from email import policy
 from email.parser import BytesParser
 import os
@@ -14,12 +15,12 @@ def openeml(file):
 
 def showparts(eml):
     for part in eml.walk():
-        if part.get_content_disposition() == None and part.get_content_maintype() == 'text':
-            print(part.get_content_maintype(), part.get_content_subtype(), len(part.get_payload(decode=True)))
-        elif part.get_content_disposition() == 'attachment':
-            print(part.get_content_disposition(),part.get_content_maintype(), part.get_content_subtype(), len(part.get_payload(decode=True)))
+        if part.get_payload(decode=True) is not None:
+            print(part.get_content_type(), part.get_content_disposition(), part.get_filename(), len(part.get_payload(decode=True)))
 
 
-eml = openeml('test/pro.eml')
-print(eml.get('Subject'), eml.get('From'), eml.get('Date'))
-showparts(eml)
+for file in sys.argv[1:]:
+    eml = openeml(file)
+    print(file)
+    showparts(eml)
+    print()
