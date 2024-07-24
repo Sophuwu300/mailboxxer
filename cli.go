@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"fmt"
-	"github.com/DusanKasan/parsemail"
 	"github.com/andybalholm/brotli"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html"
@@ -13,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -71,32 +70,6 @@ func UnBr(buf *bytes.Buffer) error {
 	reader := brotli.NewReader(bytes.NewReader(data))
 	_, err := buf.ReadFrom(reader)
 	return err
-}
-
-func Show(b *bytes.Buffer) error {
-	e, err := parsemail.Parse(b)
-	if err != nil {
-		return err
-	}
-	var s string
-	var ishtml bool
-	if e.HTMLBody != "" {
-		s = e.HTMLBody
-		ishtml = true
-	} else {
-		s = e.TextBody
-		ishtml = false
-	}
-	var bb []byte
-	if bb, err = base64.StdEncoding.DecodeString(s); err == nil {
-		s = string(bb)
-	}
-	if ishtml {
-		s = RenderHTML(s)
-	}
-	b.Reset()
-	b.WriteString(s)
-	return nil
 }
 
 func node(w io.Writer, n *html.Node) {
@@ -158,7 +131,34 @@ func DisplayRows(metas []EmailMeta, page int, h int) {
 	}
 }
 
-func OpenMail(metas []EmailMeta, page int, h int, s string) error {
+func wrap(w int, s string) string {
+	var line = ""
+	var lines, b []string
+	for _, n := range strings.Split(s, "\n") {
+		b = strings.Split(n, " ")
+		for i, v := range b {
+			if len(v) > w {
+				lines = append(lines, v[:w-1], v[w-1:])
+				continue
+			}
+			if len(line)+len(v) < w {
+				line += v + " "
+			} else {
+				lines = append(lines, strings.TrimSuffix(line, " "))
+				line = ""
+				continue
+			}
+			if i == len(b)-1 {
+				lines = append(lines, strings.TrimSuffix(line, " "))
+				line = ""
+			}
+		}
+	}
+	lines = slices.Clip(lines)
+	return "  " + strings.Join(lines, "  \n  ")
+}
+
+func OpenMail(metas []EmailMeta, page int, h int, s string, w int) error {
 	n := 0
 	for _, r := range s {
 		if r < '0' || r > '9' {
@@ -174,20 +174,24 @@ func OpenMail(metas []EmailMeta, page int, h int, s string) error {
 		return fmt.Errorf("invalid number")
 	}
 	id := metas[n].Id
-	b, err := os.ReadFile(filepath.Join(SAVEPATH, id+".br"))
+	var b []byte
+	path, err := filepath.Glob(filepath.Join(SAVEPATH, id, "body.*"))
+	if len(path) == 0 {
+		return fmt.Errorf("no email found")
+	}
+	b, err = os.ReadFile(path[0])
 	if err != nil {
 		return err
 	}
-	var email bytes.Buffer
-	email.Write(b)
-	if err = UnBr(&email); err != nil {
-		return err
+	s = string(b)
+	if filepath.Ext(path[0]) == ".html" {
+		s = RenderHTML(s)
 	}
-	if err = Show(&email); err != nil {
-		return err
-	}
-	cmd := exec.Command("less")
-	cmd.Stdin = &email
+	w -= 4
+	s = wrap(w, s)
+
+	cmd := exec.Command("less", "-sR")
+	cmd.Stdin = strings.NewReader(s)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -199,7 +203,7 @@ func CLI(metas *[]EmailMeta) {
 	defer fmt.Print("\033[?1049l")
 	page := 0
 	var s string
-	_, h := GetTSize()
+	w, h := GetTSize()
 	h -= 5
 	if h > 20 {
 		h = 20
@@ -226,7 +230,7 @@ func CLI(metas *[]EmailMeta) {
 		case "":
 			continue
 		default: // open mail
-			if err := OpenMail(*metas, page, h, s); err != nil {
+			if err := OpenMail(*metas, page, h, s, w); err != nil {
 				fmt.Println(err)
 			}
 		}

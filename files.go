@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -11,7 +12,9 @@ import (
 	"strings"
 )
 
-func getfiles(files *map[string][]byte, parts interface{}) {
+type FileList map[string][]byte
+
+func getfiles(files *FileList, parts interface{}) {
 	var body io.Reader
 	var head textproto.MIMEHeader
 	switch part := parts.(type) {
@@ -44,23 +47,31 @@ func getfiles(files *map[string][]byte, parts interface{}) {
 	if len(content) == 0 {
 		return
 	}
-	name := params["name"]
-	if strings.HasPrefix(mediaType, "text/") || strings.HasPrefix(mediaType, "message/") {
-		name = "body.txt"
-		if strings.Contains(mediaType, "html") {
-			name = "index.html"
-		}
+	name := "body.txt"
+	if params["name"] != "" {
+		name = params["name"]
+	}
+	if strings.Contains(mediaType, "html") {
+		name = "index.html"
 	}
 	(*files)[name] = append((*files)[name], content...)
 }
 
-func EmlFiles(eml *mail.Message) map[string][]byte {
+func EmlFiles(eml *mail.Message) FileList {
 	s := ""
 	for k := range eml.Header {
 		s += fmt.Sprintf("%s: %s\n", k, eml.Header.Get(k))
 	}
-	files := make(map[string][]byte)
+	files := make(FileList)
 	files["header.txt"] = []byte(s)
 	getfiles(&files, eml)
 	return files
+}
+
+func GetFiles(b *bytes.Buffer) (FileList, error) {
+	e, err := mail.ReadMessage(b)
+	if err != nil {
+		return nil, err
+	}
+	return EmlFiles(e), nil
 }

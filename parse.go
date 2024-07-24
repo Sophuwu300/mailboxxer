@@ -18,7 +18,7 @@ const TimeFormat = "2006-01-02 15:04:05 -0700"
 func Brotli(buf *bytes.Buffer) error {
 	data := buf.Bytes()
 	buf.Reset()
-	writer := brotli.NewWriter(buf)
+	writer := brotli.NewWriterLevel(buf, brotli.BestCompression)
 	_, err := writer.Write(data)
 	if err != nil {
 		return err
@@ -26,9 +26,16 @@ func Brotli(buf *bytes.Buffer) error {
 	return writer.Close()
 }
 
-func SaveEmail(em EmailMeta, email bytes.Buffer) error {
-	path := filepath.Join(SAVEPATH, em.Id+".br")
-	err := os.WriteFile(path, email.Bytes(), 0600)
+func SaveEmail(em EmailMeta, files FileList) error {
+	path := filepath.Join(SAVEPATH, em.Id)
+	var err error
+	_ = os.MkdirAll(path, 0700)
+	for name, data := range files {
+		err = os.WriteFile(filepath.Join(path, name), data, 0600)
+		if err != nil {
+			return err
+		}
+	}
 	return err
 }
 
@@ -36,7 +43,7 @@ func NewEntry(f os.DirEntry) (EmailMeta, error) {
 	if !f.Type().IsRegular() {
 		return EmailMeta{}, fmt.Errorf("unsupported file type in directory")
 	}
-	meta, email, err := Parse(filepath.Join(INBOX, f.Name()))
+	meta, files, err := Parse(filepath.Join(INBOX, f.Name()))
 	if err != nil {
 		return meta, err
 	}
@@ -44,7 +51,7 @@ func NewEntry(f os.DirEntry) (EmailMeta, error) {
 		s, _ := f.Info()
 		meta.Date = s.ModTime().Format(TimeFormat)
 	}
-	err = SaveEmail(meta, email)
+	err = SaveEmail(meta, files)
 	if err != nil {
 		return meta, err
 	}
@@ -68,20 +75,24 @@ func ScanDir(newEmails *[]EmailMeta) error {
 	return nil
 }
 
-func Parse(path string) (EmailMeta, bytes.Buffer, error) {
+func Parse(path string) (EmailMeta, FileList, error) {
 	var email bytes.Buffer
 	var meta EmailMeta
+	var files FileList
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return meta, email, err
+		return meta, files, err
 	}
 	email.Write(b)
 	meta, err = GenerateMeta(email)
 	if err != nil {
-		return meta, email, err
+		return meta, files, err
 	}
-	err = Brotli(&email)
-	return meta, email, err
+	files, err = GetFiles(&email)
+	if err != nil {
+		return meta, files, err
+	}
+	return meta, files, err
 }
 
 func dateHeader(e *mail.Header) string {

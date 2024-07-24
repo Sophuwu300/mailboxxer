@@ -94,5 +94,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
-	CLI(&metas)
+	for _, v := range os.Args[1:] {
+		if v == "--cli" {
+			CLI(&metas)
+			return
+		}
+	}
 }
