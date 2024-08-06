@@ -8,6 +8,8 @@ import (
 	"html"
 	"net/http"
 	"net/mail"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -148,7 +150,7 @@ div {
 				}
 			}
 
-			fmt.Fprintf(w, `<section onclick="location.href='%s'">
+			fmt.Fprintf(w, `<section onclick="location.href='%s/html.html'">
 	<div class="time">%s</div>
 	<div class="addr" title="%s">%s</div>
 	<div class="addr" title="%s">%s</div>
@@ -162,6 +164,17 @@ div {
 			}(), em.Subject)...)
 		}
 		fmt.Fprintf(w, "</body></html>")
+		return
+	}
+	if filepath.Base(r.URL.Path) == "html.html" && len(strings.Split(r.URL.Path[1:], "/")) == 2 {
+		id := filepath.Base(filepath.Dir(r.URL.Path))
+		s, _ := os.ReadFile(filepath.Join(SAVEPATH, id, "header.txt"))
+		b, _ := os.ReadFile(filepath.Join(SAVEPATH, id, "body.txt"))
+		fmt.Fprintf(w, `<html><head><title>%s</title></head>
+<body style="display: flex; flex-direction: row;">
+<div style="width: 50%%;display:inline;height:100%%;overflow:scroll;"><pre>%s</pre><br><pre>%s</pre></div>
+<iframe style="width: 50%%;display:inline;height:100%%;overflow:scroll;" src="%s"></iframe>
+</body></html>`, id, string(s), string(b), "/"+id)
 		return
 	}
 	http.FileServer(http.Dir(SAVEPATH)).ServeHTTP(w, r)
