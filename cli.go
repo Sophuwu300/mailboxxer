@@ -46,10 +46,10 @@ func TimeStr(s string) string {
 		}
 		return fmt.Sprintf("%d m ago", int(d.Minutes()))
 	}(), "th", (func() string {
-		if t.Day()%9 < 1 || t.Day()%9 > 3 {
+		if t.Day()%10 < 1 || t.Day()%10 > 3 {
 			return "th"
 		}
-		return []string{"st", "nd", "rd"}[t.Day()%9-1]
+		return []string{"st", "nd", "rd"}[t.Day()%10-1]
 	})())
 }
 
