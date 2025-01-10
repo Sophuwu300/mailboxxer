@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/andybalholm/brotli"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html"
 	"io"
@@ -62,14 +61,6 @@ func displayAddress(a string) string {
 		return addr.Name
 	}
 	return addr.Address
-}
-
-func UnBr(buf *bytes.Buffer) error {
-	data := buf.Bytes()
-	buf.Reset()
-	reader := brotli.NewReader(bytes.NewReader(data))
-	_, err := buf.ReadFrom(reader)
-	return err
 }
 
 func node(w io.Writer, n *html.Node) {

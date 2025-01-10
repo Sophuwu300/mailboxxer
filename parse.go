@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	_ "encoding/json"
 	"fmt"
-	"github.com/andybalholm/brotli"
 	"mime"
 	"net/mail"
 	"os"
@@ -14,17 +13,6 @@ import (
 )
 
 const TimeFormat = "2006-01-02 15:04:05 -0700"
-
-func Brotli(buf *bytes.Buffer) error {
-	data := buf.Bytes()
-	buf.Reset()
-	writer := brotli.NewWriterLevel(buf, brotli.BestCompression)
-	_, err := writer.Write(data)
-	if err != nil {
-		return err
-	}
-	return writer.Close()
-}
 
 func SaveEmail(em EmailMeta, files FileList) error {
 	path := filepath.Join(SAVEPATH, em.Id)

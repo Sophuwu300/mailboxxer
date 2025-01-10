@@ -3,7 +3,6 @@ module sophuwu.site/mailbox
 go 1.22.5
 
 require (
-	github.com/andybalholm/brotli v1.1.0
 	github.com/glebarez/go-sqlite v1.22.0
 	golang.org/x/crypto v0.25.0
 	golang.org/x/net v0.27.0
