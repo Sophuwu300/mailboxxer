@@ -1,4 +1,4 @@
-module sophuwu.site/mailbox
+module sophuwu.site/mailboxxer
 
 go 1.22.5
 

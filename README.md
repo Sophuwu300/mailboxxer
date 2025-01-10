@@ -21,5 +21,15 @@ An application to view your postfix inbox.
 
 Set up postfix to save emails to `$HOME/.mailbox/inbox/` and run the following command to create the database:
 
+
+## Flags
+
+`--cli` runs the cli interface
+
+`--web` runs the webinterface on port 4131
+
+If none are given, will parse and save new emails, then exit.
+
+
 ## License
 MIT
