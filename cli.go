@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html"
@@ -11,8 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sophuwu.site/mailboxxer/db"
 	"strings"
-	"time"
 )
 
 func GetTSize() (int, int) {
@@ -21,44 +22,6 @@ func GetTSize() (int, int) {
 		return 80, 24
 	}
 	return w, h
-}
-
-func TimeStr(s string) string {
-	t, err := time.Parse(TimeFormat, s)
-	if err != nil {
-		return s
-	}
-	n := time.Now().Local()
-	return strings.ReplaceAll(func() string {
-		if t.Year() != n.Year() {
-			return t.Format("Jan 02th 2006")
-		}
-		d := time.Since(t)
-		if d.Hours() > 24*6 {
-			return t.Format("Jan 02th")
-		}
-		if d.Hours() > 24 {
-			return t.Format("Mon 15:04")
-		}
-		if d.Hours() > 1 {
-			return fmt.Sprintf("%d h ago", int(d.Hours()))
-		}
-		return fmt.Sprintf("%d m ago", int(d.Minutes()))
-	}(), "th", (func(day int) string {
-		if day/10 == 1 {
-			return "th"
-		}
-		switch day % 10 {
-		case 1:
-			return "st"
-		case 2:
-			return "nd"
-		case 3:
-			return "rd"
-		default:
-			return "th"
-		}
-	})(t.Day()))
 }
 
 func displayAddress(a string) string {
@@ -115,19 +78,11 @@ func RenderHTML(htmlContent string) string {
 	return buff.String()
 }
 
-func (em EmailMeta) Display() string {
-	s := fmt.Sprintf("%13.13s | ", TimeStr(em.Date))
-	s += fmt.Sprintf("%40.40s | ", displayAddress(em.From))
-	s += fmt.Sprintf("%s", em.Subject)
-	return s
-}
-
-func DisplayRows(metas []EmailMeta, page int, h int) {
-	fmt.Println("Page: ", page)
-	fmt.Printf("id:\t%13.13s | %40.40s | %s\n", "Date", "From", "Subject")
-	page *= h
-	for i := page; i < len(metas) && i < page+h; i++ {
-		fmt.Printf("%d:\t%s\n", i-page, metas[i].Display())
+func DisplayRows(q *db.Query) {
+	fmt.Printf("Page: %d/%d\n", q.Page(), q.TotalPages())
+	fmt.Printf(" id | %13.13s | %40.40s | %s\n", "Date", "From", "Subject")
+	for i, em := range q.Rows() {
+		fmt.Printf("%3d | %13.13s | %40.40s | %s\n", i, db.TimeStr(em.Date), displayAddress(em.From), em.Subject)
 	}
 }
 
@@ -158,81 +113,120 @@ func wrap(w int, s string) string {
 	return "  " + strings.Join(lines, "  \n  ")
 }
 
-func OpenMail(metas []EmailMeta, page int, h int, s string, w int) error {
-	n := 0
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			break
-		}
-		n = n*10 + int(r-'0')
+var ErrInvalidNumber = errors.New("invalid number")
+
+func OpenMail(r *db.Query, s string) error {
+	n, err := parseInt(s)
+	if err != nil {
+		return ErrInvalidNumber
 	}
-	if !strings.HasPrefix(s, fmt.Sprintf("%d", n)) {
-		return fmt.Errorf("invalid number")
+	var meta db.EmailMeta
+	meta, err = r.Row(n)
+	if err != nil {
+		return ErrInvalidNumber
 	}
-	n += page * h
-	if n >= len(metas) || n < 0 {
-		return fmt.Errorf("invalid number")
-	}
-	id := metas[n].Id
+	id := meta.Id
 	var b []byte
-	path, err := filepath.Glob(filepath.Join(SAVEPATH, id, "body.*"))
-	if len(path) == 0 {
-		return fmt.Errorf("no email found")
+	isHtml := false
+	b, err = os.ReadFile(filepath.Join(db.SAVEPATH, id, "body.txt"))
+	if errors.Is(err, os.ErrNotExist) {
+		b, err = os.ReadFile(filepath.Join(db.SAVEPATH, id, "body.html"))
+		isHtml = true
 	}
-	b, err = os.ReadFile(path[0])
 	if err != nil {
 		return err
 	}
 	s = string(b)
-	if filepath.Ext(path[0]) == ".html" {
+	if isHtml {
 		s = RenderHTML(s)
 	}
-	w -= 4
-	s = wrap(w, s)
-
 	cmd := exec.Command("less", "-sR")
 	cmd.Stdin = strings.NewReader(s)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	fmt.Print("\033[?1049l")
+	err = cmd.Run()
+	fmt.Print("\033[?1049h")
+	return err
 }
 
-func CLI(metas *[]EmailMeta) {
-	// use alternate screen
-	fmt.Print("\033[?1049h")
-	defer fmt.Print("\033[?1049l")
-	page := 0
-	var s string
+func getSize(W, H *int) bool {
 	w, h := GetTSize()
-	h -= 5
-	if h > 20 {
-		h = 20
+	if h > 28 {
+		h = 28
 	} else if h < 5 {
 		h = 5
 	}
-	for {
-		// clear screen and move cursor to top
-		fmt.Print("\033[2J\033[H\r")
-		if page < 0 {
-			page = 0
+	h -= 4
+	b := false
+	if H != nil {
+		if *H != h {
+			b = true
 		}
-		DisplayRows(*metas, page, h)
-		fmt.Println("n: next, p: previous, q: quit, (id): open")
-		fmt.Print("(n/p/q/id): ")
-		fmt.Scanln(&s)
-		switch s {
-		case "n":
-			page++
-		case "p":
-			page--
-		case "q":
-			return
-		case "":
-			continue
-		default: // open mail
-			if err := OpenMail(*metas, page, h, s, w); err != nil {
-				fmt.Println(err)
+		*H = h
+	}
+	if W != nil {
+		*W = w
+	}
+	return b
+}
+
+func parseInt(s string) (int, error) {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("invalid number: %s", s)
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, nil
+}
+
+func CLI() {
+	var s string
+	var w, h int
+	getSize(&w, &h)
+	r, err := db.NewQuery(h)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error creating query:", err)
+		return
+	}
+
+	// alternative screen
+	fmt.Print("\033[?1049h")
+	// on exit restore terminal
+	defer fmt.Print("\033[?1049l")
+
+	for {
+		fmt.Print("\033[2J\033[H\r")
+		if getSize(&w, &h) {
+			if err = r.SetPageSize(h); err != nil {
+				break
 			}
 		}
+		DisplayRows(r)
+		fmt.Println("n: next page, p: previous  |  q: quit  |  <id>: open")
+		fmt.Print("input (n/p/q/id): ")
+		s = ""
+		fmt.Scanln(&s)
+		switch s {
+		case "":
+			continue
+		case "q":
+			return
+		case "n":
+			err = r.Next()
+		case "p":
+			err = r.Prev()
+		default:
+			if err = OpenMail(r, s); errors.Is(err, ErrInvalidNumber) {
+				continue
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return
+		}
+
 	}
 }

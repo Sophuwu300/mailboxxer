@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"bytes"
@@ -9,12 +9,13 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 const TimeFormat = "2006-01-02 15:04:05 -0700"
 
-func SaveEmail(em EmailMeta, files FileList) error {
+func saveEmail(em EmailMeta, files FileList) error {
 	path := filepath.Join(SAVEPATH, em.Id)
 	var err error
 	_ = os.MkdirAll(path, 0700)
@@ -27,43 +28,48 @@ func SaveEmail(em EmailMeta, files FileList) error {
 	return err
 }
 
-func NewEntry(f os.DirEntry) (EmailMeta, error) {
+func newEntry(f os.DirEntry) error {
 	if !f.Type().IsRegular() {
-		return EmailMeta{}, fmt.Errorf("unsupported file type in directory")
+		return fmt.Errorf("unsupported file type in directory")
 	}
-	meta, files, err := Parse(filepath.Join(INBOX, f.Name()))
+	meta, files, err := parse(filepath.Join(INBOX, f.Name()))
 	if err != nil {
-		return meta, err
+		return fmt.Errorf("error parsing email: %w", err)
 	}
 	if meta.Date == "" {
 		s, _ := f.Info()
 		meta.Date = s.ModTime().Format(TimeFormat)
 	}
-	err = SaveEmail(meta, files)
+	_, err = db.Exec("INSERT INTO emails (id, subject, toaddr, fromaddr, date) VALUES (?, ?, ?, ?, ?)", meta.Id, meta.Subject, meta.To, meta.From, meta.Date)
 	if err != nil {
-		return meta, err
+		return fmt.Errorf("error inserting email into database: %w", err)
+	}
+	err = saveEmail(meta, files)
+	if err != nil {
+		return fmt.Errorf("error saving email files: %w", err)
 	}
 	err = os.Remove(filepath.Join(INBOX, f.Name()))
-	return meta, err
-}
-
-func ScanDir(newEmails *[]EmailMeta) error {
-	dir, err := os.ReadDir(INBOX)
 	if err != nil {
-		return err
-	}
-	var meta EmailMeta
-	for _, f := range dir {
-		meta, err = NewEntry(f)
-		if err != nil {
-			return err
-		}
-		*newEmails = append(*newEmails, meta)
+		return fmt.Errorf("error cleaning tmp file: %w", err)
 	}
 	return nil
 }
 
-func Parse(path string) (EmailMeta, FileList, error) {
+func parseNewMail() error {
+	dir, err := os.ReadDir(INBOX)
+	if err != nil {
+		return err
+	}
+	for _, f := range dir {
+		err = newEntry(f)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parse(path string) (EmailMeta, FileList, error) {
 	var email bytes.Buffer
 	var meta EmailMeta
 	var files FileList
@@ -72,11 +78,11 @@ func Parse(path string) (EmailMeta, FileList, error) {
 		return meta, files, err
 	}
 	email.Write(b)
-	meta, err = GenerateMeta(email)
+	meta, err = generateMeta(email)
 	if err != nil {
 		return meta, files, err
 	}
-	files, err = GetFiles(&email)
+	files, err = getFiles(&email)
 	if err != nil {
 		return meta, files, err
 	}
@@ -92,7 +98,7 @@ func dateHeader(e *mail.Header) string {
 	}
 	return d.Format(TimeFormat)
 }
-func ShaHash(b []byte) string {
+func shaHash(b []byte) string {
 	h := sha1.New()
 	h.Write(b)
 	return fmt.Sprintf("%X", h.Sum(nil))
@@ -112,11 +118,11 @@ var decode = func(d mime.WordDecoder) func(s *string) {
 	}
 }(mime.WordDecoder{})
 
-// GenerateMeta generates the EmailMeta for the EmailData
+// generateMeta generates the EmailMeta for the EmailData
 // This is used to index the email in the database
-func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
+func generateMeta(email bytes.Buffer) (EmailMeta, error) {
 	var em EmailMeta
-	em.Id = ShaHash(email.Bytes())
+	em.Id = shaHash(email.Bytes())
 	em.Subject = "No Subject"
 
 	e, err := mail.ReadMessage(bytes.NewReader(email.Bytes()))
@@ -159,6 +165,44 @@ func GenerateMeta(email bytes.Buffer) (EmailMeta, error) {
 	return em, nil
 }
 
+func TimeStr(s string) string {
+	t, err := time.Parse(TimeFormat, s)
+	if err != nil {
+		return s
+	}
+	n := time.Now().Local()
+	return strings.ReplaceAll(func() string {
+		if t.Year() != n.Year() {
+			return t.Format("Jan 02th 2006")
+		}
+		d := time.Since(t)
+		if d.Hours() > 24*6 {
+			return t.Format("Jan 02th")
+		}
+		if d.Hours() > 24 {
+			return t.Format("Mon 15:04")
+		}
+		if d.Hours() > 1 {
+			return fmt.Sprintf("%d h ago", int(d.Hours()))
+		}
+		return fmt.Sprintf("%d m ago", int(d.Minutes()))
+	}(), "th", (func(day int) string {
+		if day/10 == 1 {
+			return "th"
+		}
+		switch day % 10 {
+		case 1:
+			return "st"
+		case 2:
+			return "nd"
+		case 3:
+			return "rd"
+		default:
+			return "th"
+		}
+	})(t.Day()))
+}
+
 // EmailMeta contains the fields that will be searchable in the database
 type EmailMeta struct {
 	From    string `json:"From"`
@@ -172,7 +216,7 @@ func stdin() {
 	var err error
 	var b bytes.Buffer
 	b.ReadFrom(os.Stdin)
-	fl, e := GetFiles(&b)
+	fl, e := getFiles(&b)
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		return

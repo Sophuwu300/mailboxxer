@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"bytes"
@@ -73,7 +73,7 @@ func getfiles(files *FileList, parts interface{}) {
 
 var cidheader = regexp.MustCompile(`^cidname: [^ ]+ [^ ]+$`) // Content-ID header
 
-func EmlFiles(eml *mail.Message, head []byte) FileList {
+func emlFiles(eml *mail.Message, head []byte) FileList {
 
 	files := make(FileList)
 	getfiles(&files, eml)
@@ -87,12 +87,12 @@ func EmlFiles(eml *mail.Message, head []byte) FileList {
 	return files
 }
 
-func GetFiles(b *bytes.Buffer) (FileList, error) {
+func getFiles(b *bytes.Buffer) (FileList, error) {
 	head := bytes.SplitN(b.Bytes(), []byte{10, 10}, 2)[0]
 	head = bytes.ReplaceAll(head, []byte{'\t'}, []byte{' '})
 	e, err := mail.ReadMessage(b)
 	if err != nil {
 		return nil, err
 	}
-	return EmlFiles(e, head), nil
+	return emlFiles(e, head), nil
 }

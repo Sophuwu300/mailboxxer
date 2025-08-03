@@ -1,0 +1,280 @@
+{{ define "index" }}
+<!DOCTYPE html>
+<html><head><title>Emails</title>
+<style>
+:root {
+    @media (max-width: 1100px) {
+        .recpt {
+            display: none;
+        }
+        --subwidth: 25%;
+    }
+{{ if .DarkMode }}
+    --dark-light: {{ .DarkMode }};
+{{ end }}
+
+
+    --cont: calc(var(--dark-light, 0) * 100%);
+    --fg-color: rgb(var(--cont),var(--cont),var(--cont));
+
+    --bg-color: rgb(from var(--fg-color) calc(255 - r) calc(255 - g) calc(255 - b));
+    --accent: color-mix(in lab, var(--accent1,#fcaeff), var(--bg-color) 50%);
+    --border-color: color-mix(in srgb, var(--fg-color), var(--bg-color) 80%);
+    --accent-light: color-mix(in srgb, var(--accent), var(--bg-color) 70%);
+}
+html {
+    color: var(--fg-color);
+    background-color: var(--bg-color);
+}
+section {
+	display: flex;
+	flex-direction: row;
+	cursor: pointer;
+	border-bottom: 1px solid var(--border-color);
+	width: 100%;
+}
+section > *{
+	display: inline-block;
+	padding: 5px;
+}
+section > div:last-child {
+	border-right: none!important;
+}
+section > div {
+	border-right: 1px solid var(--border-color);
+}
+
+main > section:hover{
+	background-color: var(--accent-light);
+}
+.addr {
+	font-weight: bold;
+}
+.addr:hover > span {
+	display: none;
+}
+.addr > span {
+	display: inline;
+}
+div {
+    margin: 0 auto 0 auto;
+    overflow: clip;
+    text-overflow: ellipsis;
+    text-wrap: nowrap;
+}
+.time {
+	width: 13ch;
+}
+.sub {
+	width: calc(100% - 13ch - var(--subwidth, 40%));
+}
+.addr {
+	width: 20%;
+	font-size: 0.8em;
+}
+.pageform {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.buttholder {
+    margin: 1ch 1lh;
+}
+button {
+	border: 1px solid var(--border-color);
+	border-radius: 0.5ch;
+}
+button:hover {
+	cursor: pointer;
+	background-color: var(--accent);
+}
+body {
+    margin: 0.5lh 1ch;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    width: calc(100% - 2ch);
+    height: calc(100% - 1lh);
+    padding: 0;
+}
+header {
+    margin: 0;
+    padding: 0;
+}
+.frameholder {
+    z-index: 4;
+    position: absolute;
+    width: calc(100% - 2em);
+    height: calc(100% - 2em);
+    display: none;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%,-50%);
+    border: 2em solid transparent;
+    background-color: color-mix(in lab, var(--fg-color), transparent 40%);
+}
+.header {
+    background: var(--accent);
+}
+.frameholder > header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    height: 3lh;
+    align-items: center;
+    padding: 0 3rlh 0 0.5rlh;
+}
+.frameholder > #iframe {
+    width: 100%;
+    height: calc(100% - 3lh);
+    border: none;
+    background: var(--bg-color);
+}
+.frameholder > header > button {
+    height: 2rlh;
+    width: 2rlh;
+    background-color: #b42032;
+    font-weight: bold;
+    color: var(--bg-color);
+    border-radius: 5px;
+    border: none;
+    position: absolute;
+    right: 0.5rlh;
+    font-size: 1.5rlh;
+}
+.frameholder > header > button:hover {
+    background-color: #ef2b30;
+}
+main {
+    overflow-y: auto;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+}
+h1 {
+    margin: 0;
+}
+
+</style>
+<style class="uwustyle"></style>
+<script>
+    var frame;
+    var iframe;
+    document.addEventListener("DOMContentLoaded", (function() {
+        frame = document.getElementById("frame");
+        iframe = document.getElementById("iframe");
+        frame.querySelector("header > button").addEventListener("click", function() {
+            iframe.src = "";
+            frame.style.display = "none";
+        });
+        loadDarkMode();
+    }));
+    function pageUpOrDown(e) {
+        let pf = document.getElementById("pageform");
+        let v = parseInt(pf.value);
+        if (e.innerHTML === "&lt;" || e.innerText === "<") {
+            pf.value = (v-1).toString();
+        } else if (e.innerHTML === "&gt;" || e.innerText === ">") {
+            pf.value = (v+1).toString();
+        } else {
+            return;
+        }
+        pf.form.submit();
+    }
+    function setIframeSrc(elem) {
+        let id = elem.id;
+        let to = elem.querySelector(".to-addr").title;
+        let from = elem.querySelector(".from-addr").title;
+        let subject = elem.querySelector(".subject").innerText;
+        let date = elem.querySelector(".date-str").innerText;
+        iframe.src = "/"+id+"?dark=" + (localStorage.getItem("darkmode") === "true" ? "1" : "0");
+        frame.style.display = "block";
+    }
+    function loadDarkMode() {
+        let dark = localStorage.getItem("darkmode") === "true";
+        let v = "0";
+        if (dark) v = "1";
+        let style = document.querySelector(".uwustyle");
+        style.innerHTML = ":root { --dark-light: " + v + "; }";
+        let color = localStorage.getItem("accent-color");
+        if (color) {
+            style.innerHTML += ":root { --accent1: " + color + "; }";
+        }
+    }
+    function toggleDarkMode() {
+        let dark = localStorage.getItem("darkmode") === "true";
+        dark = !dark;
+        localStorage.setItem("darkmode",  dark.toString());
+        loadDarkMode()
+    }
+    function setAccentColor(color) {
+        if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+            console.error("Invalid color format. Use hex format like #ff0000.");
+            return;
+        }
+        localStorage.setItem("accent-color", color);
+        loadDarkMode();
+    }
+</script>
+</head><body>
+{{ if .Error }}
+<h1>Error {{ .ErrorCode }}</h1>
+<p>{{ .Error }}</p>
+{{ end }}
+{{ if .HtmlMetas }}
+<header>
+    <form action="." class="pageform" method="get">
+        <h1>Emails</h1>
+        <div class="buttholder">
+            <button onclick="pageUpOrDown(this);">&lt;</button>
+            <span>Page {{ .Page }} of {{ .TotalPages }}</span>
+            <button onclick="pageUpOrDown(this);">&gt;</button>
+        </div>
+        <input type="hidden" id="pageform" name="page" value="{{ .Page }}"  />
+        <input type="hidden" name="to" value="{{ .ToAddr }}" />
+        <input type="hidden" name="from" value="{{ .FromAddr }}" />
+        <input type="hidden" name="subject" value="{{ .Subject }}" />
+        <input type="hidden" name="date" value="{{ .Date }}"/>
+    </form>
+    <section class="header">
+        <div class="addr" title="Full Address">Sender</div>
+        <div class="sub">Subject</div>
+        <div class="addr recpt" title="Full Address">Recipient</div>
+        <div class="time">Date</div>
+    </section>
+</header>
+<main style="overflow-y: auto;width: 100%;height: 100%;">
+{{ range .HtmlMetas }}
+<section id="{{ .Id }}" onclick="setIframeSrc(this);">
+    <div class="addr from-addr" title="{{ .FromAddr }}">{{ .FromName }}</div>
+    <div class="sub subject">{{ .Subject }}</div>
+    <div class="addr recpt to-addr" title="{{ .ToAddr }}">{{ .ToName }}</div>
+    <div class="time date-str">{{ .Date }}</div>
+</section>
+{{ end }}
+</main>
+<article id="frame" class="frameholder hidden">
+    <header class="header">
+        <span>
+            Subject
+        </span>
+        <span>
+            Date
+        </span>
+        <button onclick="setIframeSrc('');">X</button>
+    </header>
+    <iframe id="iframe">
+    </iframe>
+</article>
+{{ end }}
+{{ if .Html }}
+{{ .Html }}
+{{ else }}
+{{ if .Text }}
+<pre style="margin:0; width: 100%; height: 100%; overflow: auto;">{{ .Text }}</pre>
+{{ end }}
+{{ end }}
+</body></html>
+{{ end }}
