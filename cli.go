@@ -44,12 +44,21 @@ func TimeStr(s string) string {
 			return fmt.Sprintf("%d h ago", int(d.Hours()))
 		}
 		return fmt.Sprintf("%d m ago", int(d.Minutes()))
-	}(), "th", (func() string {
-		if t.Day()%10 < 1 || t.Day()%10 > 3 {
+	}(), "th", (func(day int) string {
+		if day/10 == 1 {
 			return "th"
 		}
-		return []string{"st", "nd", "rd"}[t.Day()%10-1]
-	})())
+		switch day % 10 {
+		case 1:
+			return "st"
+		case 2:
+			return "nd"
+		case 3:
+			return "rd"
+		default:
+			return "th"
+		}
+	})(t.Day()))
 }
 
 func displayAddress(a string) string {

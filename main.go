@@ -45,7 +45,6 @@ func ReadRows(rows *sql.Rows) ([]EmailMeta, error) {
 	var metas []EmailMeta
 	var meta EmailMeta
 	var err error
-	defer rows.Close()
 	for rows.Next() {
 		err = rows.Scan(&meta.Id, &meta.Subject, &meta.To, &meta.From, &meta.Date)
 		if err != nil {

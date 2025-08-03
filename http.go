@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
-	"encoding/gob"
 	"fmt"
 	"html"
 	"net/http"
@@ -13,31 +11,61 @@ import (
 	"strings"
 )
 
-var ch = make(chan []byte)
+type ReturnQuery struct {
+	EM  []EmailMeta
+	Err error
+}
+
+type Query struct {
+	Query  string
+	Return chan ReturnQuery
+}
+
+func (q *Query) Error(err error) {
+	if q.Return != nil {
+		q.Return <- ReturnQuery{
+			Err: err,
+		}
+	}
+}
+func (q *Query) Result(m []EmailMeta, err error) {
+	if q.Return != nil {
+		q.Return <- ReturnQuery{
+			EM:  m,
+			Err: err,
+		}
+	}
+}
+
+var QChan = make(chan *Query, 10)
 
 func Web(db *sql.DB) {
 	go func() {
 		err := http.ListenAndServe("127.0.1.69:3141", http.HandlerFunc(Http))
 		if err != nil {
-			ch <- []byte("EXIT")
+			QChan <- &Query{Query: "EXIT"}
 		}
 	}()
-	var b []byte
 	var r *sql.Rows
-	var m []EmailMeta
-	var bb bytes.Buffer
+	var q *Query
+	var err error
 	for {
-		b = <-ch
-		if string(b) == "EXIT" {
+		q = <-QChan
+		if q.Query == "EXIT" {
+			q.Error(fmt.Errorf("server stopped"))
 			break
 		}
-		r, _ = db.Query(string(b))
-		m, _ = ReadRows(r)
-		gob.NewEncoder(&bb).Encode(m)
-		ch <- bb.Bytes()
-		bb.Reset()
-		r.Close()
+		if q.Query == "" {
+			q.Error(fmt.Errorf("empty query"))
+			continue
+		}
+		if r, err = db.Query(q.Query); err != nil {
+			q.Error(fmt.Errorf("query error: %w", err))
+			continue
+		}
+		q.Result(ReadRows(r))
 	}
+	close(QChan)
 }
 
 func E(s ...string) []any {
@@ -46,6 +74,16 @@ func E(s ...string) []any {
 		a[i] = html.EscapeString(v)
 	}
 	return a
+}
+
+type HtmlEM struct {
+	Id       string
+	Date     string
+	Subject  string
+	ToName   string
+	ToAddr   string
+	FromName string
+	FromAddr string
 }
 
 func Http(w http.ResponseWriter, r *http.Request) {
@@ -64,19 +102,64 @@ func Http(w http.ResponseWriter, r *http.Request) {
 		if r.Form.Get("date") != "" {
 			q = append(q, fmt.Sprintf(` date LIKE '%%%s%%'`, r.Form.Get("date")))
 		}
-		ch <- []byte(fmt.Sprintf("SELECT * FROM emails %s ORDER BY date DESC", func() string {
-			if len(q) == 0 {
-				return ""
-			}
-			return "WHERE " + strings.Join(q, " AND ")
-		}()))
-		var metas []EmailMeta
-		var b []byte
-		b = <-ch
-		dec := gob.NewDecoder(strings.NewReader(string(b)))
-		if dec.Decode(&metas) != nil {
+		qu := Query{
+			Query: fmt.Sprintf("SELECT * FROM emails %s ORDER BY date DESC", func() string {
+				if len(q) == 0 {
+					return ""
+				}
+				return "WHERE " + strings.Join(q, " AND ")
+			}()),
+			Return: make(chan ReturnQuery),
+		}
+		QChan <- &qu
+		ret := <-qu.Return
+		close(qu.Return)
+		if ret.Err != nil {
 			http.Error(w, "Internal Server Error", 500)
 			return
+		}
+		if len(ret.EM) == 0 {
+			fmt.Fprint(w, `<html><head><title>No Emails</title></head><body><h1>No Emails Found</h1></body></html>`)
+			return
+		}
+		var htmlMetas []HtmlEM
+		var err error
+		var from *mail.Address
+		var to []*mail.Address
+		var addrlist []string
+		var htmlMeta HtmlEM
+		for _, em := range ret.EM {
+			htmlMeta = HtmlEM{
+				Id:      em.Id,
+				Date:    TimeStr(em.Date),
+				Subject: em.Subject,
+			}
+			from, err = mail.ParseAddress(em.From)
+			if err != nil {
+				htmlMeta.FromAddr = em.From
+			} else {
+				htmlMeta.FromAddr = from.Address
+				htmlMeta.FromName = from.Name
+			}
+			if htmlMeta.FromName == "" {
+				htmlMeta.FromName = htmlMeta.FromAddr
+			}
+			to, err = mail.ParseAddressList(em.To)
+			if err != nil || len(to) == 0 {
+				addrlist = strings.Split(em.To, ", ")
+				if len(addrlist) == 0 {
+					htmlMeta.ToAddr = em.To
+				} else {
+					htmlMeta.ToAddr = addrlist[0]
+				}
+			} else {
+				htmlMeta.ToAddr = to[0].Address
+				htmlMeta.ToName = to[0].Name
+			}
+			if htmlMeta.ToName == "" {
+				htmlMeta.ToName = htmlMeta.ToAddr
+			}
+			htmlMetas = append(htmlMetas, htmlMeta)
 		}
 		fmt.Fprint(w, `<html><head><title>Emails</title>
 <style>
@@ -139,29 +222,13 @@ div {
 }
 </style>
 </head><body>`)
-		var from *mail.Address
-		for _, em := range metas {
-			from, _ = mail.ParseAddress(em.From)
-			if from.Name == "" {
-				if strings.Contains(from.Address, "@") {
-					from.Name = strings.Split(from.Address, "@")[0]
-				} else {
-					from.Name = from.Address
-				}
-			}
-
+		for _, em := range htmlMetas {
 			fmt.Fprintf(w, `<section onclick="location.href='%s/html.html'">
 	<div class="time">%s</div>
 	<div class="addr" title="%s">%s</div>
 	<div class="addr" title="%s">%s</div>
 	<div class="sub">%s</div>
-</section>`, E(em.Id, TimeStr(em.Date), from.Address, from.Name, em.To, func() string {
-				a, err := mail.ParseAddressList(em.To)
-				if err != nil {
-					return em.To
-				}
-				return strings.Split(a[0].Address+"@", "@")[0]
-			}(), em.Subject)...)
+</section>`, E(em.Id, em.Date, em.FromAddr, em.FromName, em.ToAddr, em.ToName, em.Subject)...)
 		}
 		fmt.Fprintf(w, "</body></html>")
 		return
