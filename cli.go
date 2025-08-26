@@ -12,7 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sophuwu.site/mailboxxer/db"
+	"git.sophuwu.com/mailboxxer/db"
 	"strings"
 )
 

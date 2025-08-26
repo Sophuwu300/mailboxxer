@@ -8,8 +8,12 @@ import (
 	"net/http"
 	"net/mail"
 	"os"
+	"context"
+	"os/signal"
+	"errors"
+	"golang.org/x/sys/unix"
 	"path/filepath"
-	"sophuwu.site/mailboxxer/db"
+	"git.sophuwu.com/mailboxxer/db"
 	"strings"
 )
 
@@ -18,9 +22,32 @@ var htmlTemplate string
 
 var t *template.Template
 
-func ServeHttp() {
+const DefaultAddr = "127.0.1.69:3141"
+
+func ServeHttp(addr string) {
 	t = template.Must(template.New("index").Parse(htmlTemplate))
-	http.ListenAndServe("127.0.1.69:3141", Http())
+
+	server := http.Server{
+		Addr:    addr,
+		Handler: Http(),
+	}
+
+	sigchan := make(chan os.Signal)
+	go func() {
+		signal.Notify(sigchan, unix.SIGINT, unix.SIGQUIT, unix.SIGKILL, unix.SIGSTOP)
+		sig := <-sigchan
+		fmt.Printf("\rgot %s\nstopping server...\n", sig.String())
+		err := server.Shutdown(context.Background())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error: shutdown:", err)
+		}
+	}()
+	fmt.Printf("starting http server on: %s\n", addr)
+	err := server.ListenAndServe()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fmt.Fprintln(os.Stderr, "error: server:", err)
+	}
+	fmt.Println("stopped")
 }
 
 func E(s ...string) []any {

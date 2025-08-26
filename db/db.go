@@ -6,31 +6,37 @@ import (
 	_ "github.com/glebarez/go-sqlite"
 	"os"
 	"path/filepath"
+	"git.sophuwu.com/gophuwu/flags"
 )
 
 var DBPATH, INBOX, SAVEPATH string
 
-func getHomeBox() string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+func ChkErr(err error) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+func getHomeBox() string {
+	home, err := os.UserHomeDir()
+	ChkErr(err)
+	if home == "" {
+		ChkErr(fmt.Errorf("unable to find $HOME"))
 	}
 	return filepath.Join(home, ".mailbox")
 }
 
 func getConf() {
-	var mailbox string
-	if len(os.Args) > 2 && os.Args[1] == "-m" {
-		mailbox = os.Args[2]
-	} else {
+	mailbox, err := flags.GetStringFlag("mailbox")
+	ChkErr(err)
+	if mailbox == "" || mailbox == "$HOME/.mailbox" {
 		mailbox = getHomeBox()
 	}
-	var err error
 	if _, err = os.Stat(mailbox); os.IsNotExist(err) {
 		os.MkdirAll(mailbox, 0700)
 	}
-	DBPATH = filepath.Join(mailbox, "mailbox.sqlite")
+
 	INBOX = filepath.Join(mailbox, "inbox", "new")
 	if _, err = os.Stat(INBOX); os.IsNotExist(err) {
 		os.MkdirAll(INBOX, 0700)
@@ -39,6 +45,7 @@ func getConf() {
 	if _, err = os.Stat(SAVEPATH); os.IsNotExist(err) {
 		os.MkdirAll(SAVEPATH, 0700)
 	}
+	DBPATH = filepath.Join(mailbox, "mailbox.sqlite")
 }
 
 func readRows(rows *sql.Rows) ([]EmailMeta, error) {
